@@ -37,7 +37,7 @@ src/SmsReader/
 ├── Monitoring/
 │   └── SmsMonitor.cs                # Real-time polling loop with enriched display pipeline
 │
-├── Agent/                            # NEW — LLM reasoning layer
+├── Agent/                            # LLM reasoning layer (optional)
 │   ├── SmsClassification.cs          # SmsCategory enum + classification record
 │   ├── SmsAgent.cs                   # Claude API client, cost gating, prompt builder
 │   ├── HeuristicClassifier.cs        # Keyword-based fallback classifier
@@ -182,14 +182,31 @@ The monitor loop runs every 5 seconds (configurable). For each new message:
 ### Console Output Example
 
 ```
-2026-02-22 18:27:08  GoVisit (Darkon)  [he]
-╭─ RECEIVED ────────────────────────────────────────╮
-│ קוד האימות לגוביזיט 1928.קוד זה תקף ל-5 דקות     │
-╰───────────────────────────────────────────────────╯
-  [OTP] GoVisit verification code (95%)
-  >>> OTP: 1928 (confidence: 100%, Hebrew OTP 4-digit)
+2026-02-22 21:11:27  +972584991144  [en]
+╭─ RECEIVED ───────────────────────╮
+│ Your verification code is 7766   │
+╰──────────────────────────────────╯
+  [OTP] OTP code: 7766 (95%)
+  >>> OTP: 7766  (confidence: 95%, Is-pattern 4-digit)
   >> Copied to clipboard!
 ```
+
+### List Mode Example
+
+```
+╭─────────────┬───────────────┬──────────────────┬──────┬───────────┬──────────╮
+│ Time        │ From          │ Message          │ Lang │ Category  │ OTP      │
+├─────────────┼───────────────┼──────────────────┼──────┼───────────┼──────────┤
+│ 02-19 18:00 │ Behatsdaa     │ הקוד לכניסה חד   │ he   │ Otp       │ 726201   │
+│             │               │ פעמית לאתר       │      │           │ 100%     │
+│ 02-19 18:05 │ Cal           │ היי, בכרטיס      │ he   │ Financial │          │
+│             │               │ מסטרקארד...      │      │           │          │
+│ 02-19 13:27 │ WeShoes       │ עוד רגע זה נגמר! │ he   │ Marketing │          │
+│ 02-19 14:53 │ orian         │ שלום, משלוח      │ he   │ Delivery  │          │
+╰─────────────┴───────────────┴──────────────────┴──────┴───────────┴──────────╯
+```
+
+Category colors: OTP=green, Spam=red, Marketing=yellow, Personal=blue, Delivery=cyan, Financial=purple, Urgent=bold red
 
 ## Configuration Reference
 
@@ -197,7 +214,7 @@ The monitor loop runs every 5 seconds (configurable). For each new message:
 {
   "Adb": {
     "Path": "path/to/adb.exe",
-    "DeviceIp": "192.168.10.134",
+    "DeviceIp": "192.168.1.103",
     "Port": 5555,
     "CommandTimeoutMs": 10000
   },
@@ -233,7 +250,15 @@ The monitor loop runs every 5 seconds (configurable). For each new message:
 | `Agent:Model` | `claude-sonnet-4-20250514` | Claude model to use |
 | `Agent:MaxTokens` | `256` | Max response tokens per API call |
 | `Agent:AutoCopyOtp` | `true` | Auto-copy detected OTP to clipboard |
-| `Agent:AutoCopyMinConfidence` | `0.85` | Minimum confidence to trigger auto-copy |
+| `Agent:AutoCopyMinConfidence` | `0.85` | Minimum confidence to trigger auto-copy (only used with LLM) |
+
+## Setup
+
+1. Connect Android phone via USB, enable USB debugging
+2. Run `adb tcpip 5555` to enable wireless ADB
+3. Set `Adb:DeviceIp` in `appsettings.json` to your phone's IP
+4. `dotnet run -- --mode=monitor` to start monitoring
+5. (Optional) Set `Agent:Enabled=true` and `Agent:ApiKey` for LLM classification
 
 ## Dependencies
 
