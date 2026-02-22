@@ -89,12 +89,10 @@ public sealed class SmsMonitor
                             $"  [green]>>> OTP (LLM): {Markup.Escape(classification.DetectedOtp)}[/]");
                     }
 
-                    // Auto-copy to clipboard: OTP code if detected, otherwise message body
+                    // Auto-copy OTP to clipboard (any confidence)
                     var otpCode = otp?.Code ?? classification.DetectedOtp;
                     if (otpCode != null)
                         ClipboardHelper.CopyToClipboard(otpCode);
-                    else
-                        ClipboardHelper.CopyToClipboard(msg.Body);
                 }
             }
         }
