@@ -166,7 +166,7 @@ Used when the LLM is disabled or skipped by cost gating. Matches keywords in Eng
 
 ### ClipboardHelper.cs — Auto-Copy
 
-Wraps `TextCopy.ClipboardService.SetText()`. Copies OTP codes to the system clipboard when confidence meets the threshold (default: 85%). Gracefully handles clipboard unavailability.
+Wraps `TextCopy.ClipboardService.SetText()`. Automatically copies any detected OTP code to the system clipboard. Gracefully handles clipboard unavailability.
 
 ## SmsMonitor.cs — Real-Time Pipeline
 
@@ -177,7 +177,7 @@ The monitor loop runs every 5 seconds (configurable). For each new message:
 3. **Enriched display** — message panel + colored category tag + summary
 4. **OTP display** — if regex found one, show code + confidence + pattern name
 5. **LLM OTP fallback** — if regex missed but LLM found an OTP, display it
-6. **Auto-copy** — if OTP confidence >= threshold, copy to clipboard
+6. **Auto-copy** — any detected OTP is automatically copied to clipboard
 
 ### Console Output Example
 
