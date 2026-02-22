@@ -171,7 +171,7 @@ static async Task ListMessagesAsync(SmsFetcher fetcher, SourceFilter filter, Otp
         // Classify
         var classification = await agent.ClassifyAsync(msg.Body, msg.Address, otp);
         var catDisplay = classification.Category != SmsCategory.Unknown
-            ? $"[{classification.CategoryColor}]{classification.Category}[/{classification.CategoryColor}]"
+            ? $"[{classification.CategoryColor}]{classification.Category}[/]"
             : "[grey]—[/]";
 
         var otpText = "";

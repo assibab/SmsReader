@@ -167,7 +167,7 @@ public sealed class SmsMonitor
                 ? $" {Markup.Escape(classification.Summary)}"
                 : "";
             AnsiConsole.MarkupLine(
-                $"  [{catColor}][[{classification.Category.ToString().ToUpperInvariant()}]]{summary} ({classification.Confidence:P0})[/{catColor}]");
+                $"  [{catColor}][[{classification.Category.ToString().ToUpperInvariant()}]]{summary} ({classification.Confidence:P0})[/]");
         }
     }
 
