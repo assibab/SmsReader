@@ -89,20 +89,12 @@ public sealed class SmsMonitor
                             $"  [green]>>> OTP (LLM): {Markup.Escape(classification.DetectedOtp)}[/]");
                     }
 
-                    // Auto-copy OTP to clipboard
+                    // Auto-copy to clipboard: OTP code if detected, otherwise message body
                     var otpCode = otp?.Code ?? classification.DetectedOtp;
-                    var otpConfidence = otp?.Confidence ?? classification.Confidence;
-                    if (otpCode != null && _agentSettings.AutoCopyOtp)
-                    {
-                        if (otpConfidence >= _agentSettings.AutoCopyMinConfidence)
-                        {
-                            ClipboardHelper.CopyToClipboard(otpCode);
-                        }
-                        else
-                        {
-                            AnsiConsole.MarkupLine($"  [grey]>> OTP confidence {otpConfidence * 100:F0}% below threshold {_agentSettings.AutoCopyMinConfidence * 100:F0}%, skipping copy[/]");
-                        }
-                    }
+                    if (otpCode != null)
+                        ClipboardHelper.CopyToClipboard(otpCode);
+                    else
+                        ClipboardHelper.CopyToClipboard(msg.Body);
                 }
             }
         }
