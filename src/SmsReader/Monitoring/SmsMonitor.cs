@@ -92,11 +92,16 @@ public sealed class SmsMonitor
                     // Auto-copy OTP to clipboard
                     var otpCode = otp?.Code ?? classification.DetectedOtp;
                     var otpConfidence = otp?.Confidence ?? classification.Confidence;
-                    if (_agentSettings.AutoCopyOtp &&
-                        otpCode != null &&
-                        otpConfidence >= _agentSettings.AutoCopyMinConfidence)
+                    if (otpCode != null && _agentSettings.AutoCopyOtp)
                     {
-                        ClipboardHelper.CopyToClipboard(otpCode);
+                        if (otpConfidence >= _agentSettings.AutoCopyMinConfidence)
+                        {
+                            ClipboardHelper.CopyToClipboard(otpCode);
+                        }
+                        else
+                        {
+                            AnsiConsole.MarkupLine($"  [grey]>> OTP confidence {otpConfidence * 100:F0}% below threshold {_agentSettings.AutoCopyMinConfidence * 100:F0}%, skipping copy[/]");
+                        }
                     }
                 }
             }
@@ -176,8 +181,9 @@ public sealed class SmsMonitor
         // OTP codes are always LTR (digits/alphanumeric)
         var code = RtlFormatter.ForceLtr(otp.Code);
         var color = otp.Confidence >= 0.8 ? "green" : otp.Confidence >= 0.6 ? "yellow" : "grey";
+        var pct = $"{otp.Confidence * 100:F0}%";
         AnsiConsole.MarkupLine(
             $"  [{color}]>>> OTP: {Markup.Escape(code)}  " +
-            $"(confidence: {otp.Confidence:P0}, {Markup.Escape(otp.PatternName)})[/{color}]");
+            $"(confidence: {pct}, {Markup.Escape(otp.PatternName)})[/]");
     }
 }
