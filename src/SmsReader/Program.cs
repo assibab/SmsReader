@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using SmsReader.Adb;
+using SmsReader.Agent;
 using SmsReader.Configuration;
 using SmsReader.Filtering;
 using SmsReader.Monitoring;
@@ -30,7 +31,7 @@ var settings = new AppSettings();
 config.Bind(settings);
 
 // Startup banner
-AnsiConsole.Write(new FigletText("SMS Reader").Color(Color.Blue));
+AnsiConsole.Write(new FigletText("SMS Agent").Color(Color.Blue));
 AnsiConsole.MarkupLine($"[grey]Device: {Markup.Escape(settings.Adb.DeviceIp)}:{settings.Adb.Port}[/]");
 AnsiConsole.MarkupLine($"[grey]Filter mode: {Markup.Escape(settings.Filters.Mode)}[/]");
 if (settings.Filters.Sources.Count > 0)
@@ -41,6 +42,16 @@ if (settings.Filters.Sources.Count > 0)
     }
 }
 AnsiConsole.MarkupLine($"[grey]OTP extraction: {(settings.Otp.Enabled ? "enabled" : "disabled")}[/]");
+
+using var agent = new SmsAgent(settings.Agent);
+if (agent.IsEnabled)
+    AnsiConsole.MarkupLine($"[green]Agent: enabled (model: {Markup.Escape(settings.Agent.Model)})[/]");
+else
+    AnsiConsole.MarkupLine("[grey]Agent: disabled (heuristic classification)[/]");
+
+if (settings.Agent.AutoCopyOtp)
+    AnsiConsole.MarkupLine($"[grey]Auto-copy OTP: enabled (min confidence: {settings.Agent.AutoCopyMinConfidence:P0})[/]");
+
 AnsiConsole.WriteLine();
 
 // Validate device IP
@@ -89,12 +100,12 @@ Console.CancelKeyPress += (_, e) =>
 switch (mode.ToLowerInvariant())
 {
     case "list":
-        await ListMessagesAsync(fetcher, filter, otpExtractor, settings);
+        await ListMessagesAsync(fetcher, filter, otpExtractor, agent, settings);
         break;
 
     case "monitor":
     default:
-        var monitor = new SmsMonitor(fetcher, filter, otpExtractor, settings.Monitoring, settings.Otp);
+        var monitor = new SmsMonitor(fetcher, filter, otpExtractor, agent, settings.Monitoring, settings.Otp, settings.Agent);
         await monitor.RunAsync(cts.Token);
         break;
 }
@@ -103,7 +114,7 @@ return 0;
 
 // --- Local functions ---
 
-static async Task ListMessagesAsync(SmsFetcher fetcher, SourceFilter filter, OtpExtractor otpExtractor, AppSettings settings)
+static async Task ListMessagesAsync(SmsFetcher fetcher, SourceFilter filter, OtpExtractor otpExtractor, SmsAgent agent, AppSettings settings)
 {
     AnsiConsole.MarkupLine("[grey]Fetching SMS messages...[/]");
 
@@ -127,6 +138,7 @@ static async Task ListMessagesAsync(SmsFetcher fetcher, SourceFilter filter, Otp
         .AddColumn(new TableColumn("[bold]From[/]").NoWrap())
         .AddColumn(new TableColumn("[bold]Message[/]"))
         .AddColumn(new TableColumn("[bold]Lang[/]").NoWrap())
+        .AddColumn(new TableColumn("[bold]Category[/]").NoWrap())
         .AddColumn(new TableColumn("[bold]OTP[/]").NoWrap());
 
     foreach (var msg in filtered)
@@ -153,16 +165,25 @@ static async Task ListMessagesAsync(SmsFetcher fetcher, SourceFilter filter, Otp
         var langColor = language == DetectedLanguage.Hebrew ? "cyan" : "grey";
         var langDisplay = $"[{langColor}]{langTag}[/]";
 
+        // Extract OTP
+        OtpResult? otp = settings.Otp.Enabled ? otpExtractor.Extract(msg) : null;
+
+        // Classify
+        var classification = await agent.ClassifyAsync(msg.Body, msg.Address, otp);
+        var catDisplay = classification.Category != SmsCategory.Unknown
+            ? $"[{classification.CategoryColor}]{classification.Category}[/{classification.CategoryColor}]"
+            : "[grey]—[/]";
+
         var otpText = "";
-        if (settings.Otp.Enabled)
+        if (otp != null)
         {
-            var otp = otpExtractor.Extract(msg);
-            if (otp != null)
-            {
-                var code = RtlFormatter.ForceLtr(otp.Code);
-                var color = otp.Confidence >= 0.8 ? "green" : otp.Confidence >= 0.6 ? "yellow" : "grey";
-                otpText = $"[{color}]{Markup.Escape(code)}[/]\n[grey]{otp.Confidence:P0}[/]";
-            }
+            var code = RtlFormatter.ForceLtr(otp.Code);
+            var color = otp.Confidence >= 0.8 ? "green" : otp.Confidence >= 0.6 ? "yellow" : "grey";
+            otpText = $"[{color}]{Markup.Escape(code)}[/]\n[grey]{otp.Confidence:P0}[/]";
+        }
+        else if (classification.DetectedOtp != null)
+        {
+            otpText = $"[green]{Markup.Escape(classification.DetectedOtp)}[/]\n[grey]LLM[/]";
         }
 
         table.AddRow(
@@ -170,6 +191,7 @@ static async Task ListMessagesAsync(SmsFetcher fetcher, SourceFilter filter, Otp
             from,
             body,
             langDisplay,
+            catDisplay,
             otpText);
     }
 
@@ -178,7 +200,7 @@ static async Task ListMessagesAsync(SmsFetcher fetcher, SourceFilter filter, Otp
 
 static void PrintHelp()
 {
-    AnsiConsole.Write(new FigletText("SMS Reader").Color(Color.Blue));
+    AnsiConsole.Write(new FigletText("SMS Agent").Color(Color.Blue));
     AnsiConsole.MarkupLine("[bold]Usage:[/] SmsReader [options]");
     AnsiConsole.WriteLine();
     AnsiConsole.MarkupLine("[bold]Modes:[/]");
@@ -190,8 +212,10 @@ static void PrintHelp()
     AnsiConsole.MarkupLine("  --Adb:Port=<port>         ADB port (default: 5555)");
     AnsiConsole.MarkupLine("  --Monitoring:PollingIntervalMs=<ms>  Poll interval (default: 5000)");
     AnsiConsole.MarkupLine("  --Filters:Mode=<mode>     None, Include, or Exclude");
+    AnsiConsole.MarkupLine("  --Agent:Enabled=<bool>    Enable LLM classification");
+    AnsiConsole.MarkupLine("  --Agent:ApiKey=<key>      Anthropic API key");
     AnsiConsole.WriteLine();
     AnsiConsole.MarkupLine("[bold]Configuration:[/]");
-    AnsiConsole.MarkupLine("  Edit appsettings.json to configure filters, OTP settings, and more.");
+    AnsiConsole.MarkupLine("  Edit appsettings.json to configure filters, OTP, agent settings, and more.");
     AnsiConsole.MarkupLine("  See README.md for setup instructions.");
 }

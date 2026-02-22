@@ -1,3 +1,4 @@
+using SmsReader.Agent;
 using SmsReader.Configuration;
 using SmsReader.Filtering;
 using SmsReader.Language;
@@ -12,8 +13,10 @@ public sealed class SmsMonitor
     private readonly SmsFetcher _fetcher;
     private readonly SourceFilter _filter;
     private readonly OtpExtractor _otpExtractor;
+    private readonly SmsAgent _agent;
     private readonly MonitoringSettings _monitorSettings;
     private readonly OtpSettings _otpSettings;
+    private readonly AgentSettings _agentSettings;
 
     private readonly HashSet<long> _knownMessageIds = [];
     private long _lastTimestamp;
@@ -22,14 +25,18 @@ public sealed class SmsMonitor
         SmsFetcher fetcher,
         SourceFilter filter,
         OtpExtractor otpExtractor,
+        SmsAgent agent,
         MonitoringSettings monitorSettings,
-        OtpSettings otpSettings)
+        OtpSettings otpSettings,
+        AgentSettings agentSettings)
     {
         _fetcher = fetcher;
         _filter = filter;
         _otpExtractor = otpExtractor;
+        _agent = agent;
         _monitorSettings = monitorSettings;
         _otpSettings = otpSettings;
+        _agentSettings = agentSettings;
     }
 
     public async Task RunAsync(CancellationToken ct)
@@ -65,13 +72,31 @@ public sealed class SmsMonitor
                     if (!_filter.ShouldInclude(msg))
                         continue;
 
-                    DisplayMessage(msg);
+                    // Pipeline: regex OTP → classify → enriched display → auto-copy
+                    OtpResult? otp = _otpSettings.Enabled ? _otpExtractor.Extract(msg) : null;
 
-                    if (_otpSettings.Enabled)
+                    var classification = await _agent.ClassifyAsync(msg.Body, msg.Address, otp);
+
+                    DisplayMessage(msg, classification);
+
+                    if (otp != null)
+                        DisplayOtp(otp);
+
+                    // If LLM detected an OTP that regex missed
+                    if (otp == null && classification.DetectedOtp != null)
                     {
-                        var otp = _otpExtractor.Extract(msg);
-                        if (otp != null)
-                            DisplayOtp(otp);
+                        AnsiConsole.MarkupLine(
+                            $"  [green]>>> OTP (LLM): {Markup.Escape(classification.DetectedOtp)}[/]");
+                    }
+
+                    // Auto-copy OTP to clipboard
+                    var otpCode = otp?.Code ?? classification.DetectedOtp;
+                    var otpConfidence = otp?.Confidence ?? classification.Confidence;
+                    if (_agentSettings.AutoCopyOtp &&
+                        otpCode != null &&
+                        otpConfidence >= _agentSettings.AutoCopyMinConfidence)
+                    {
+                        ClipboardHelper.CopyToClipboard(otpCode);
                     }
                 }
             }
@@ -100,7 +125,7 @@ public sealed class SmsMonitor
         }
     }
 
-    private void DisplayMessage(SmsMessage msg)
+    private void DisplayMessage(SmsMessage msg, SmsClassification classification)
     {
         var timestamp = msg.Date.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
         var label = _filter.GetMatchLabel(msg);
@@ -108,7 +133,6 @@ public sealed class SmsMonitor
 
         // Detect language and direction
         var language = LanguageDetector.Detect(msg.Body);
-        var isRtl = LanguageDetector.GetDirection(language) == TextDirection.RightToLeft;
         var langTag = RtlFormatter.GetLanguageTag(language);
 
         // Format address — may contain Hebrew sender names
@@ -134,17 +158,26 @@ public sealed class SmsMonitor
         };
 
         AnsiConsole.Write(panel);
-        AnsiConsole.WriteLine();
+
+        // Show classification line
+        if (classification.Category != SmsCategory.Unknown)
+        {
+            var catColor = classification.CategoryColor;
+            var summary = !string.IsNullOrEmpty(classification.Summary)
+                ? $" {Markup.Escape(classification.Summary)}"
+                : "";
+            AnsiConsole.MarkupLine(
+                $"  [{catColor}][[{classification.Category.ToString().ToUpperInvariant()}]]{summary} ({classification.Confidence:P0})[/{catColor}]");
+        }
     }
 
-    private void DisplayOtp(OtpResult otp)
+    private static void DisplayOtp(OtpResult otp)
     {
         // OTP codes are always LTR (digits/alphanumeric)
         var code = RtlFormatter.ForceLtr(otp.Code);
         var color = otp.Confidence >= 0.8 ? "green" : otp.Confidence >= 0.6 ? "yellow" : "grey";
         AnsiConsole.MarkupLine(
-            $"  [{color}]>>> OTP DETECTED: {Markup.Escape(code)}  " +
-            $"(confidence: {otp.Confidence:P0}, pattern: {Markup.Escape(otp.PatternName)})[/{color}]");
-        AnsiConsole.WriteLine();
+            $"  [{color}]>>> OTP: {Markup.Escape(code)}  " +
+            $"(confidence: {otp.Confidence:P0}, {Markup.Escape(otp.PatternName)})[/{color}]");
     }
 }

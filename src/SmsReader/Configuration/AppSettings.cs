@@ -6,6 +6,7 @@ public sealed class AppSettings
     public MonitoringSettings Monitoring { get; set; } = new();
     public FilterSettings Filters { get; set; } = new();
     public OtpSettings Otp { get; set; } = new();
+    public AgentSettings Agent { get; set; } = new();
 }
 
 public sealed class AdbSettings
@@ -39,4 +40,14 @@ public sealed class OtpSettings
 {
     public bool Enabled { get; set; } = true;
     public double HighlightThreshold { get; set; } = 0.7;
+}
+
+public sealed class AgentSettings
+{
+    public bool Enabled { get; set; } = false;
+    public string ApiKey { get; set; } = "";
+    public string Model { get; set; } = "claude-sonnet-4-20250514";
+    public int MaxTokens { get; set; } = 256;
+    public bool AutoCopyOtp { get; set; } = true;
+    public double AutoCopyMinConfidence { get; set; } = 0.85;
 }
